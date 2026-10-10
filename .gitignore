@@ -1,0 +1,9 @@
+.env
+node_modules/
+data/
+*.db
+*.log
+.DS_Store
+nutrition-bot-deploy.zip
+ДЕПЛОЙ_AMVERA.md
+КАК_ДЕПЛОИТЬ_AMVERA.md
