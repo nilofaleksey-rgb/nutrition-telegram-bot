@@ -1,0 +1,15 @@
+# Конфиг деплоя на Amvera Cloud. Переменные (BOT_TOKEN и др.) задаются в панели Amvera, а не в файле.
+meta:
+  environment: python
+  toolchain:
+    name: pip
+    version: "3.11"
+
+build:
+  requirementsPath: requirements.txt
+
+run:
+  scriptName: main.py
+  # Папка /data сохраняется между деплоями — здесь лежит база с дневником
+  persistenceMount: /data
+  containerPort: 80
