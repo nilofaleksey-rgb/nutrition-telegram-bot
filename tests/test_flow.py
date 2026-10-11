@@ -16,6 +16,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import CallbackQuery, Chat, Message, PhotoSize, Update, User, Voice
 
 from bot.ai import AIService
+from bot.llm import ChatBackend
 from bot.db import Repo
 from bot.handlers import router
 
@@ -68,7 +69,7 @@ class FlowBase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.repo = Repo(os.path.join(self.tmp.name, "bot.db"))
-        self.ai = AIService(api_key=None, chat_model="x", stt_model="y")
+        self.ai = AIService(None)
         self.session = _SESSION
         self.session.sent.clear()
         self.bot = _BOT
@@ -284,9 +285,13 @@ class AIFlowTest(FlowBase):
         self.assertIn("Выберите приём пищи", self.last())
 
 
+class _StubBackend(ChatBackend):
+    supports_voice = True
+
+
 class _FakeAI(AIService):
     def __init__(self):
-        super().__init__(api_key="sk-test", chat_model="m", stt_model="w")
+        super().__init__(_StubBackend())
         self._labs_calls = 0
 
     async def analyze_food_photo(self, image):

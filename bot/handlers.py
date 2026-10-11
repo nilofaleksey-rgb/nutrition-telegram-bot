@@ -618,9 +618,10 @@ async def _handle_meal_text(message: Message, state: FSMContext, repo: Repo, ai:
 async def meal_voice_input(message: Message, state: FSMContext, repo: Repo, ai: AIService, tz: ZoneInfo, bot):
     if not repo.get_user(message.from_user.id):
         return await start_onboarding(message, state)
-    if not ai.enabled:
+    if not ai.supports_voice:
         return await message.answer(
-            "🎤 Голос распознаёт ИИ, а он пока не подключён. Напишите блюдо текстом."
+            "🎤 Голосовой ввод пока не подключён: бесплатный GigaChat речь не распознаёт. "
+            "Напишите блюдо текстом или пришлите фото."
         )
     await _ensure_meal_state(state, tz)
     buf = BytesIO()

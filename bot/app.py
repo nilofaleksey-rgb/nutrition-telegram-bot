@@ -13,9 +13,29 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
 
 from .ai import AIService
-from .config import load_settings
+from .config import Settings, load_settings
 from .db import Repo
 from .handlers import router
+from .llm import GigaChatBackend, OpenAIBackend
+
+
+def build_ai(settings: Settings) -> AIService:
+    log = logging.getLogger(__name__)
+    if settings.gigachat_auth_key:
+        log.info("ИИ: GigaChat (%s / фото: %s)", settings.gigachat_model, settings.gigachat_vision_model)
+        return AIService(GigaChatBackend(
+            settings.gigachat_auth_key,
+            scope=settings.gigachat_scope,
+            model=settings.gigachat_model,
+            vision_model=settings.gigachat_vision_model,
+            ca_cert=settings.gigachat_ca_cert,
+            verify_ssl=settings.gigachat_verify_ssl,
+        ))
+    if settings.openai_api_key:
+        log.info("ИИ: OpenAI (%s)", settings.openai_model)
+        return AIService(OpenAIBackend(settings.openai_api_key, settings.openai_model, settings.whisper_model))
+    log.warning("Ключ ИИ не задан (GIGACHAT_AUTH_KEY / OPENAI_API_KEY): фото, консультации и анализы отключены.")
+    return AIService(None)
 
 
 async def run() -> None:
@@ -26,11 +46,7 @@ async def run() -> None:
     settings = load_settings()
 
     repo = Repo(settings.db_path)
-    ai = AIService(settings.openai_api_key, settings.openai_model, settings.whisper_model)
-    if not ai.enabled:
-        logging.getLogger(__name__).warning(
-            "OPENAI_API_KEY не задан: фото, голос, консультации и анализы отключены."
-        )
+    ai = build_ai(settings)
 
     bot = Bot(
         token=settings.bot_token,
@@ -50,7 +66,10 @@ async def run() -> None:
     ])
     await bot.delete_webhook(drop_pending_updates=True)
     logging.getLogger(__name__).info("Бот запущен, начинаю polling…")
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await ai.close()
 
 
 def main() -> None:
