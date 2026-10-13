@@ -1,20 +1,44 @@
-import { transcribeVoice, extractFoodFromText } from '../services/ai.js';
-import { Markup } from 'telegraf';
+import { transcribeVoice, extractFoodFromText, hasGemini } from '../services/ai.js';
+import { downloadTelegramFile, formatFoodCard, mealKeyboard } from './photo.js';
 
 export async function setupVoiceHandler(ctx) {
-  const processingMsg = await ctx.reply('🎤 Обрабатываю голосовое сообщение...');
+  const loading = await ctx.reply('🎤 Обрабатываю голосовое сообщение...');
+
   try {
-    const transcription = await transcribeVoice();
-    await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id);
-    if (!transcription) return ctx.reply('❌ Не удалось распознать речь. Попробуй еще раз.');
-    const foodData = await extractFoodFromText(transcription);
-    if (!foodData) return ctx.reply(`Ты сказал: "${transcription}"\n\n❌ Не смог определить блюдо.`);
     if (!ctx.session) ctx.session = {};
-    ctx.session.pendingMeal = foodData;
-    await ctx.reply(`🎤 Ты сказал: "${transcription}"\n\n🍽️ Распознано: ${foodData.food_name}\n\n📊 Примерная пищевая ценность:\n🔥 Калории: ${foodData.calories.toFixed(0)} ккал\n🥩 Белки: ${foodData.protein.toFixed(1)}г\n🧈 Жиры: ${foodData.fats.toFixed(1)}г\n🍞 Углеводы: ${foodData.carbs.toFixed(1)}г\n\nДобавить в дневник?`, Markup.inlineKeyboard([[Markup.button.callback('🌅 Завтрак', 'save_meal_breakfast'), Markup.button.callback('🌞 Обед', 'save_meal_lunch')], [Markup.button.callback('🌙 Ужин', 'save_meal_dinner'), Markup.button.callback('🍎 Перекус', 'save_meal_snack')], [Markup.button.callback('❌ Отменить', 'cancel_meal')]]));
+
+    const voice = ctx.message.voice || ctx.message.audio;
+    if (!voice) {
+      await ctx.telegram.deleteMessage(ctx.chat.id, loading.message_id).catch(() => {});
+      return ctx.reply('❌ Не удалось получить аудио. Попробуй ещё раз.');
+    }
+
+    if (!hasGemini()) {
+      await ctx.telegram.deleteMessage(ctx.chat.id, loading.message_id).catch(() => {});
+      return ctx.reply(
+        '🎤 Для распознавания голоса нужен бесплатный ключ Google Gemini.\n\n' +
+        'Получи его за минуту (карта не нужна): https://aistudio.google.com/apikey\n' +
+        'Затем добавь переменную окружения:\nGEMINI_API_KEY=твой_ключ\n\n' +
+        'Пока напиши текстом, что съел ✍️'
+      );
+    }
+
+    const buffer = await downloadTelegramFile(ctx, voice.file_id);
+    const transcription = await transcribeVoice(buffer, 'audio/ogg');
+
+    await ctx.telegram.deleteMessage(ctx.chat.id, loading.message_id).catch(() => {});
+
+    if (!transcription) {
+      return ctx.reply('❌ Не удалось распознать речь. Запиши ещё раз или напиши текстом.');
+    }
+
+    const food = await extractFoodFromText(transcription);
+    ctx.session.pendingMeal = food;
+
+    await ctx.reply(formatFoodCard(food, `🎤 Ты сказал: «${transcription}»`), mealKeyboard());
   } catch (error) {
     console.error('Ошибка обработки голоса:', error);
-    try { await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id); } catch {}
+    await ctx.telegram.deleteMessage(ctx.chat.id, loading.message_id).catch(() => {});
     await ctx.reply('❌ Произошла ошибка при обработке голосового сообщения.');
   }
 }

@@ -1,65 +1,111 @@
-# Nutrition Telegram Bot
+# 🤖 ИИ-ассистент по питанию (Telegram-бот)
 
-AI-powered nutrition assistant Telegram bot with KBJU tracking, food diary, and personalized recommendations.
+Telegram-бот: нутрициолог, диетолог и фитнес-тренер в одном. Ведёт дневник питания,
+считает КБЖУ, анализирует еду по фото и голосу, следит за весом и разбирает анализы.
 
-## 🚀 Features
+## ✨ Возможности
 
-- 📊 User profile setup (height, weight, age, goal)
-- 📝 Food diary with automatic KBJU calculation
-- 🍽️ Food analysis from text input
-- 📸 Photo analysis (planned)
-- 🎤 Voice input support (planned)
-- 📈 Daily and periodic reports
-- 💡 AI nutritionist consultations
-- 🔬 Medical test analysis
-- ⚖️ Weight tracking
+| Функция | Статус |
+|---|---|
+| Профиль: рост, вес, пол, возраст, цель | ✅ |
+| Автоматический расчёт нормы КБЖУ | ✅ |
+| Дневник питания с приёмами пищи | ✅ |
+| Подсчёт калорий за день и остатка | ✅ |
+| Прогресс-бар и визуализация | ✅ |
+| Анализ еды по фото | ✅ (нужен бесплатный ключ Gemini) |
+| Ввод еды голосом | ✅ (нужен бесплатный ключ Gemini) |
+| Ввод еды текстом: «гречка с курицей 250 г» | ✅ (работает без ключей) |
+| Ручное редактирование дня | ✅ |
+| Замеры веса и история | ✅ |
+| Консультации диетолога | ✅ |
+| Краткий ответ + «дай более развернутый ответ» | ✅ |
+| Загрузка анализов (скриншот) + сравнение | ✅ (нужен ключ Gemini) |
+| Дневные и периодические отчёты | ✅ |
+| Оформление с эмодзи | ✅ |
 
-## 🛠️ Tech Stack
+## 🧠 Про нейросети: работает бесплатно
 
-- Node.js
-- Telegraf (Telegram Bot API)
-- SQLite (sql.js)
-- Axios
+Бот **не требует OpenAI**. Используются три уровня, поэтому он работает даже без ключей:
 
-## 📦 Installation
+1. **Google Gemini** — бесплатный ключ, умеет фото, голос и сложные ответы.
+   Получить без карты: https://aistudio.google.com/apikey
+2. **Pollinations.ai** — бесплатный текстовый AI **без ключа вообще** (fallback).
+3. **Локальная база продуктов** — 50+ позиций с КБЖУ, работает офлайн.
+
+## 🚀 Быстрый старт
 
 ```bash
 npm install
+cp .env.example .env   # вставь TELEGRAM_BOT_TOKEN и (опционально) GEMINI_API_KEY
+npm start
 ```
 
-## ⚙️ Configuration
-
-Create a `.env` file:
+### Переменные окружения
 
 ```env
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+TELEGRAM_BOT_TOKEN=токен_от_BotFather
+GEMINI_API_KEY=бесплатный_ключ_google_gemini   # опционально, для фото и голоса
 DATABASE_PATH=./data/nutrition.db
 ```
 
-## 🚀 Running
+## 💬 Как пользоваться
 
-```bash
-npm start
+- **📝 Заполнить профиль** — рост, вес, пол, возраст, целевой вес → бот считает норму КБЖУ
+- **📸 Анализ еды** — отправь фото, текст или голосовое
+- **📊 Дневник питания** — сводка за день, добавление и удаление записей
+- **⚖️ Замер веса** — промежуточные взвешивания и прогресс к цели
+- **🩺 Загрузить анализы** — отправь скриншот, получи разбор и сравнение с прошлыми
+- **💬 Консультация** — задай вопрос, затем напиши «дай более развернутый ответ»
+- **📈 Отчеты** — сводка за неделю
+
+### Команды
+
+`/start` `/help` `/profile` `/diary` `/stats` `/weight` `/report` `/analyses` `/ask` `/status` `/reset`
+
+## 🏗️ Структура
+
 ```
+src/
+├── index.js              # запуск бота
+├── database/db.js        # SQLite (sql.js), схема и сохранение
+├── commands/index.js     # команды и главное меню
+├── handlers/
+│   ├── index.js          # роутер сообщений
+│   ├── profile.js        # профиль и расчёт КБЖУ
+│   ├── diary.js          # дневник, добавление и удаление
+│   ├── photo.js          # фото → КБЖУ
+│   ├── voice.js          # голос → КБЖУ
+│   ├── weight.js         # замеры веса
+│   ├── consultation.js   # консультации диетолога
+│   └── health.js         # анализ медицинских анализов
+└── services/
+    ├── ai.js             # Gemini + Pollinations + локальная база
+    ├── user.js           # профиль пользователя
+    ├── diary.js          # записи дневника
+    ├── stats.js          # статистика и отчёты
+    └── weight.js         # история веса
+```
+
+## ☁️ Деплой на Amvera
+
+1. Создай проект в Amvera и подключи этот GitHub-репозиторий.
+2. Добавь переменные окружения:
+   - `TELEGRAM_BOT_TOKEN`
+   - `GEMINI_API_KEY` (если нужны фото и голос)
+   - `DATABASE_PATH=/data/nutrition.db`
+3. Запусти сборку — конфигурация `amvera.yml` уже в репозитории.
 
 ## 🐳 Docker
 
 ```bash
 docker build -t nutrition-bot .
 docker run -d --name nutrition-bot \
-  -e TELEGRAM_BOT_TOKEN=your_token \
+  -e TELEGRAM_BOT_TOKEN=твой_токен \
+  -e GEMINI_API_KEY=твой_ключ \
+  -v nutrition-data:/app/data \
   nutrition-bot
 ```
 
-## 📝 Deploy to Amvera
-
-1. Fork this repository
-2. Connect to Amvera via GitHub
-3. Add environment variables:
-   - `TELEGRAM_BOT_TOKEN`
-   - `DATABASE_PATH=/app/data/nutrition.db`
-4. Deploy!
-
-## 📄 License
+## 📄 Лицензия
 
 MIT

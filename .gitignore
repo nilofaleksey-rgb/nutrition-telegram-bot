@@ -2,8 +2,7 @@
 node_modules/
 data/
 *.db
+*.db-journal
 *.log
+npm-debug.log*
 .DS_Store
-nutrition-bot-deploy.zip
-ДЕПЛОЙ_AMVERA.md
-КАК_ДЕПЛОИТЬ_AMVERA.md

@@ -1,0 +1,14 @@
+meta:
+  environment: node
+  toolchain:
+    name: npm
+    version: '20'
+
+build:
+  additionalCommands: npm ci --omit=dev
+
+run:
+  command: npm start
+  # Постоянное хранилище для базы данных (чтобы дневник не терялся при пересборке).
+  # После деплоя задай переменную DATABASE_PATH=/data/nutrition.db
+  persistenceMount: /data
