@@ -7,29 +7,48 @@
  *  3. Локальная база продуктов — если нейросети недоступны
  */
 
-const GEMINI_KEY = (process.env.GEMINI_API_KEY || '').trim();
 const POLLINATIONS_URL = 'https://text.pollinations.ai/openai';
 
-const GEMINI_MODELS = [
-  process.env.GEMINI_MODEL,
-  'gemini-2.5-flash',
-  'gemini-2.0-flash',
-  'gemini-flash-latest'
-].filter(Boolean);
+/** Читаем ключ лениво: .env загружается уже после импорта модулей. */
+function getGeminiKey() {
+  return (process.env.GEMINI_API_KEY || '').trim();
+}
+
+/**
+ * Модели перебираются по порядку, пока одна не ответит.
+ * Проверено практикой на ключе проекта:
+ *  - gemini-3.5-flash-lite / gemini-flash-lite-latest — стабильны для текста И фото
+ *  - gemini-3-flash-preview, gemini-3.8-flash и др. часто отдают 503/429
+ */
+function getGeminiModels() {
+  return [
+    process.env.GEMINI_MODEL,
+    'gemini-3.5-flash-lite',
+    'gemini-flash-lite-latest',
+    'gemini-3-flash-preview',
+    'gemini-flash-latest',
+    'gemini-3.8-flash',
+    'gemini-3.6-flash'
+  ].filter(Boolean);
+}
+
+/** Сколько раз повторять запрос при перегрузке (503/429). */
+const RETRY_ATTEMPTS = 3;
 
 let activeGeminiModel = null;
 
 export function hasGemini() {
-  return Boolean(GEMINI_KEY);
+  return Boolean(getGeminiKey());
 }
 
 export function aiStatus() {
+  const has = Boolean(getGeminiKey());
   return {
-    gemini: Boolean(GEMINI_KEY),
-    vision: Boolean(GEMINI_KEY),
-    voice: Boolean(GEMINI_KEY),
+    gemini: has,
+    vision: has,
+    voice: has,
     textFallback: true,
-    model: activeGeminiModel || (GEMINI_KEY ? 'gemini (auto)' : 'pollinations')
+    model: activeGeminiModel || (has ? 'gemini (auto)' : 'pollinations')
   };
 }
 
@@ -57,14 +76,24 @@ function toNumber(value, fallback = 0) {
 
 function normalizeFood(obj, fallbackName = '🍽️ Блюдо') {
   if (!obj || typeof obj !== 'object') return null;
-  const name = obj.food_name || obj.name || obj.dish || fallbackName;
+  let name = obj.food_name || obj.name || obj.dish || fallbackName;
+
+  // Убираем английские вставки, которые иногда добавляет модель: "buckwheat 🌾 chicken 🍗"
+  name = String(name)
+    .replace(/\b(buckwheat|chicken|rice|oatmeal|oat|fish|salmon|tuna|meat|beef|pork|turkey|egg|eggs|omelet|salad|cucumber|tomato|potato|cabbage|carrot|broccoli|cottage\s*cheese|yogurt|milk|kefir|cheese|banana|apple|orange|pear|bread|soup|borscht|pizza|burger|pasta|macaroni|pilaf|coffee|with|and|bowl|sweet\s*potato|chickpea|avocado)\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  if (!name) name = fallbackName;
+
   const calories = toNumber(obj.calories, NaN);
   const protein = toNumber(obj.protein, NaN);
   const fats = toNumber(obj.fats ?? obj.fat, NaN);
   const carbs = toNumber(obj.carbs ?? obj.carbohydrates, NaN);
   if (!Number.isFinite(calories)) return null;
+
   return {
-    food_name: String(name).slice(0, 120),
+    food_name: name.slice(0, 120),
     calories: Math.round(calories),
     protein: Math.round((Number.isFinite(protein) ? protein : 0) * 10) / 10,
     fats: Math.round((Number.isFinite(fats) ? fats : 0) * 10) / 10,
@@ -74,48 +103,72 @@ function normalizeFood(obj, fallbackName = '🍽️ Блюдо') {
 
 /** Запрос к Gemini с автоподбором рабочей модели. */
 async function gemini(parts, { temperature = 0.4, maxTokens = 1024 } = {}) {
-  if (!GEMINI_KEY) return null;
+  const key = getGeminiKey();
+  if (!key) return null;
 
+  const allModels = getGeminiModels();
   const models = activeGeminiModel
-    ? [activeGeminiModel, ...GEMINI_MODELS.filter(m => m !== activeGeminiModel)]
-    : GEMINI_MODELS;
+    ? [activeGeminiModel, ...allModels.filter(m => m !== activeGeminiModel)]
+    : allModels;
 
   for (const model of models) {
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts }],
-            generationConfig: { temperature, maxOutputTokens: maxTokens }
-          }),
-          signal: AbortSignal.timeout(90000)
+    for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts }],
+              generationConfig: { temperature, maxOutputTokens: maxTokens }
+            }),
+            signal: AbortSignal.timeout(90000)
+          }
+        );
+
+        const data = await res.json().catch(() => null);
+
+        if (!res.ok) {
+          const status = data?.error?.status;
+          console.warn(`Gemini ${model} (попытка ${attempt}): HTTP ${res.status} ${status || ''}`);
+
+          // Ключ неверный — нет смысла продолжать
+          if (status === 'API_KEY_INVALID' || status === 'PERMISSION_DENIED') return null;
+
+          // Модель недоступна — сразу к следующей
+          if (status === 'NOT_FOUND') break;
+
+          // Перегрузка или лимит — ждём и пробуем снова
+          if (status === 'UNAVAILABLE' || status === 'RESOURCE_EXHAUSTED' || res.status >= 500) {
+            if (attempt < RETRY_ATTEMPTS) {
+              await new Promise(r => setTimeout(r, 1200 * attempt));
+              continue;
+            }
+            break;
+          }
+
+          break;
         }
-      );
 
-      const data = await res.json().catch(() => null);
+        const text = (data?.candidates?.[0]?.content?.parts || [])
+          .map(p => p.text)
+          .filter(Boolean)
+          .join('\n')
+          .trim();
 
-      if (!res.ok) {
-        const status = data?.error?.status;
-        console.warn(`Gemini ${model}: HTTP ${res.status} ${status || ''}`);
-        if (status === 'API_KEY_INVALID' || status === 'PERMISSION_DENIED') return null;
-        continue;
+        if (text) {
+          activeGeminiModel = model;
+          return text;
+        }
+        break;
+      } catch (error) {
+        console.warn(`Gemini ${model} (попытка ${attempt}) ошибка: ${error.message}`);
+        if (attempt < RETRY_ATTEMPTS) {
+          await new Promise(r => setTimeout(r, 1200 * attempt));
+          continue;
+        }
       }
-
-      const text = (data?.candidates?.[0]?.content?.parts || [])
-        .map(p => p.text)
-        .filter(Boolean)
-        .join('\n')
-        .trim();
-
-      if (text) {
-        activeGeminiModel = model;
-        return text;
-      }
-    } catch (error) {
-      console.warn(`Gemini ${model} ошибка: ${error.message}`);
     }
   }
 
@@ -254,8 +307,9 @@ export async function analyzeFoodImage(buffer, mimeType = 'image/jpeg') {
 
   const prompt = `Ты нутрициолог с 10-летним опытом. Проанализируй еду на фото.
 Оцени состав блюда и размер порции по изображению.
+ВАЖНО: название блюда пиши ТОЛЬКО по-русски, с эмодзи и примерной граммовкой, без английских слов.
 Ответь ТОЛЬКО валидным JSON без пояснений:
-{"food_name":"название с эмодзи и примерной порцией","calories":число,"protein":число,"fats":число,"carbs":число}
+{"food_name":"название по-русски с эмодзи и граммовкой","calories":число,"protein":число,"fats":число,"carbs":число}
 Если на фото нет еды — верни {"error":"no_food"}.`;
 
   const text = await gemini([
@@ -300,8 +354,9 @@ export async function extractFoodFromText(text) {
 
   const prompt = `Ты нутрициолог. Пользователь описал, что съел: "${text}"
 Оцени КБЖУ этой еды. Если в тексте указана граммовка или размер порции — учитывай её, иначе бери обычную порцию (${grams} г).
+ВАЖНО: название блюда пиши ТОЛЬКО по-русски, с эмодзи и граммовкой, без английских слов.
 Ответь ТОЛЬКО валидным JSON:
-{"food_name":"название с эмодзи","calories":число,"protein":число,"fats":число,"carbs":число}`;
+{"food_name":"название по-русски с эмодзи и граммовкой","calories":число,"protein":число,"fats":число,"carbs":число}`;
 
   const aiText = await gemini([{ text: prompt }], { temperature: 0.2, maxTokens: 400 });
   if (aiText) {

@@ -1,4 +1,7 @@
-import { extractFoodFromText, getConsultation, shortRecommendation, aiStatus } from './src/services/ai.js';
+import dotenv from 'dotenv';
+dotenv.config();
+
+import { extractFoodFromText, getConsultation, shortRecommendation, aiStatus } from '../src/services/ai.js';
 
 const results = [];
 const check = (name, ok, info = '') => {
