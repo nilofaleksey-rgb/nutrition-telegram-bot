@@ -109,10 +109,37 @@ export async function setupDatabase() {
     )
   `);
 
+  // Таблица замечаний и правок пользователя
+  database.run(`
+    CREATE TABLE IF NOT EXISTS feedback (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      context TEXT,
+      target_id INTEGER,
+      message TEXT NOT NULL,
+      applied INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(user_id)
+    )
+  `);
+
+  // Таблица долговременной памяти о пользователе (предпочтения, ограничения)
+  database.run(`
+    CREATE TABLE IF NOT EXISTS user_memory (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      note TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(user_id)
+    )
+  `);
+
   // Индексы для быстрого поиска
   database.run(`CREATE INDEX IF NOT EXISTS idx_food_diary_user_date ON food_diary(user_id, date)`);
   database.run(`CREATE INDEX IF NOT EXISTS idx_weight_logs_user ON weight_logs(user_id)`);
   database.run(`CREATE INDEX IF NOT EXISTS idx_health_analyses_user ON health_analyses(user_id)`);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_id)`);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_user_memory_user ON user_memory(user_id)`);
 
   saveDB();
   console.log('✅ База данных инициализирована');

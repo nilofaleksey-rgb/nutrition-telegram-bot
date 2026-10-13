@@ -302,11 +302,16 @@ function parseWeight(text) {
 /* 1. Анализ еды по фото                                               */
 /* ------------------------------------------------------------------ */
 
-export async function analyzeFoodImage(buffer, mimeType = 'image/jpeg') {
+export async function analyzeFoodImage(buffer, mimeType = 'image/jpeg', personalContext = '') {
   const base64 = bufferToBase64(buffer);
+
+  const memoryBlock = personalContext
+    ? `\nУчитывай предпочтения и ограничения пользователя:\n${personalContext}\n`
+    : '';
 
   const prompt = `Ты нутрициолог с 10-летним опытом. Проанализируй еду на фото.
 Оцени состав блюда и размер порции по изображению.
+${memoryBlock}
 ВАЖНО: название блюда пиши ТОЛЬКО по-русски, с эмодзи и примерной граммовкой, без английских слов.
 Ответь ТОЛЬКО валидным JSON без пояснений:
 {"food_name":"название по-русски с эмодзи и граммовкой","calories":число,"protein":число,"fats":число,"carbs":число}
@@ -349,10 +354,15 @@ export async function transcribeVoice(buffer, mimeType = 'audio/ogg') {
 /* 3. Определение блюда по тексту                                      */
 /* ------------------------------------------------------------------ */
 
-export async function extractFoodFromText(text) {
+export async function extractFoodFromText(text, personalContext = '') {
   const grams = parseWeight(text);
 
+  const memoryBlock = personalContext
+    ? `\nУчитывай предпочтения и ограничения пользователя:\n${personalContext}\n`
+    : '';
+
   const prompt = `Ты нутрициолог. Пользователь описал, что съел: "${text}"
+${memoryBlock}
 Оцени КБЖУ этой еды. Если в тексте указана граммовка или размер порции — учитывай её, иначе бери обычную порцию (${grams} г).
 ВАЖНО: название блюда пиши ТОЛЬКО по-русски, с эмодзи и граммовкой, без английских слов.
 Ответь ТОЛЬКО валидным JSON:
@@ -400,10 +410,23 @@ function statsLine(stats) {
   return `Съедено: ${stats.calories.toFixed(0)}/${stats.dailyCalories} ккал, Б ${stats.protein.toFixed(1)}/${stats.dailyProtein} г, Ж ${stats.fats.toFixed(1)}/${stats.dailyFats} г, У ${stats.carbs.toFixed(1)}/${stats.dailyCarbs} г.`;
 }
 
-export async function getConsultation({ question, profile, todayStats }) {
+export async function getConsultation({ question, profile, todayStats, personalContext = '' }) {
+  const memoryBlock = personalContext
+    ? `
+🔴 ОБЯЗАТЕЛЬНЫЕ ОГРАНИЧЕНИЯ ПОЛЬЗОВАТЕЛЯ (нарушать нельзя):
+${personalContext}
+
+ПРАВИЛА РАБОТЫ С ОГРАНИЧЕНИЯМИ:
+1. Никогда не предлагай и не советуй продукты из списка запретов — даже как вариант «иногда можно».
+2. Если продукт запрещён, предложи замену (например, вместо свинины — индейку или курицу).
+3. Замечания пользователя к прошлым ответам считай верными и применяй их (например, правильную калорийность).
+4. Не перечисляй запрещённые продукты ради упоминания — просто не используй их.
+`
+    : '';
+
   const prompt = `Ты опытный диетолог, нутрициолог и фитнес-тренер с 10-летним стажем. Отвечай по-русски, дружелюбно, с эмодзи.
 Учитывай КБЖУ, витамины и микроэлементы, а также цель пользователя.
-
+${memoryBlock}
 Профиль: ${profileLine(profile)}
 Сегодня: ${statsLine(todayStats)}
 

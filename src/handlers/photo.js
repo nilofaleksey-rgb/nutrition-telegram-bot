@@ -14,7 +14,7 @@ export function mealKeyboard() {
   return Markup.inlineKeyboard([
     [Markup.button.callback('🌅 Завтрак', 'save_meal_breakfast'), Markup.button.callback('🌞 Обед', 'save_meal_lunch')],
     [Markup.button.callback('🌙 Ужин', 'save_meal_dinner'), Markup.button.callback('🍎 Перекус', 'save_meal_snack')],
-    [Markup.button.callback('❌ Отменить', 'cancel_meal')]
+    [Markup.button.callback('✏️ Есть замечания', 'fb_food'), Markup.button.callback('❌ Отменить', 'cancel_meal')]
   ]);
 }
 
@@ -48,7 +48,9 @@ export async function setupPhotoHandler(ctx) {
       return handleHealthPhoto(ctx, buffer, 'image/jpeg');
     }
 
-    const result = await analyzeFoodImage(buffer, 'image/jpeg');
+    const { getPersonalContext } = await import('../services/feedback.js');
+    const personalContext = await getPersonalContext(ctx.from.id);
+    const result = await analyzeFoodImage(buffer, 'image/jpeg', personalContext);
 
     await ctx.telegram.deleteMessage(ctx.chat.id, loading.message_id).catch(() => {});
 

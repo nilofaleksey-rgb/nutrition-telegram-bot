@@ -1,6 +1,8 @@
 import { getUserProfile } from '../services/user.js';
 import { getDailyStats } from '../services/stats.js';
 import { getConsultation } from '../services/ai.js';
+import { getSafeConsultation } from '../services/feedback.js';
+import { Markup } from 'telegraf';
 
 export async function setupConsultationHandler(ctx, question = null) {
   if (!question) {
@@ -21,7 +23,15 @@ export async function setupConsultationHandler(ctx, question = null) {
     const profile = await getUserProfile(ctx.from.id);
     const stats = await getDailyStats(ctx.from.id, new Date().toISOString().split('T')[0]);
 
-    const response = await getConsultation({ question, profile, todayStats: stats });
+    // getSafeConsultation гарантирует соблюдение ограничений из памяти:
+    // проверяет ответ и при нарушении переспрашивает модель.
+    const { response, violations } = await getSafeConsultation({
+      question,
+      profile,
+      todayStats: stats,
+      userId: ctx.from.id,
+      getConsultationFn: getConsultation
+    });
 
     await ctx.telegram.deleteMessage(ctx.chat.id, loading.message_id).catch(() => {});
 
@@ -29,10 +39,12 @@ export async function setupConsultationHandler(ctx, question = null) {
     ctx.session.lastConsultation = response.detailed;
     ctx.session.lastQuestion = question;
 
-    await ctx.reply(
-      `💡 ${response.short}\n\n<i>Хочешь подробнее? Напиши «дай более развернутый ответ».</i>`,
-      { parse_mode: 'HTML' }
-    );
+    let message = `💡 ${response.short}\n\n✏️ Если что-то не так — нажми «Есть замечания», и я запомню.`;
+    if (violations.length) {
+      message += `\n\n⚠️ В ответе проскочил(и) ${violations.map(v => v.food).join(', ')} — это под твоим запретом. Напиши замечание, и я исправлюсь.`;
+    }
+
+    await ctx.reply(message, Markup.inlineKeyboard([[Markup.button.callback('✏️ Есть замечания', 'fb_consult')]]));
   } catch (error) {
     console.error('Ошибка консультации:', error);
     await ctx.telegram.deleteMessage(ctx.chat.id, loading.message_id).catch(() => {});

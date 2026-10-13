@@ -6,6 +6,7 @@ import { setupVoiceHandler } from './voice.js';
 import { setupWeightHandler, setupWeightHistoryCallback, handleWeightText } from './weight.js';
 import { setupConsultationHandler } from './consultation.js';
 import { setupHealthHandler } from './health.js';
+import { setupFeedbackCallbacks, handleFeedbackText, startFeedback } from './feedback.js';
 import { getUserProfile } from '../services/user.js';
 import { getDailyStats } from '../services/stats.js';
 import { extractFoodFromText } from '../services/ai.js';
@@ -28,6 +29,7 @@ export function setupHandlers(bot) {
   setupSaveMealCallback(bot);
   setupWeightHistoryCallback(bot);
   setupHealthHandler(bot);
+  setupFeedbackCallbacks(bot);
 
   // ---- Главное меню ----
   bot.hears('📝 Заполнить профиль', (ctx) => setupProfileHandler(ctx));
@@ -64,6 +66,27 @@ export function setupHandlers(bot) {
 
   bot.hears('⚖️ Замер веса', (ctx) => setupWeightHandler(ctx));
   bot.hears('💬 Консультация', (ctx) => setupConsultationHandler(ctx));
+
+  bot.hears('✏️ Замечания и память', async (ctx) => {
+    const { getMemory, getFeedback } = await import('../services/feedback.js');
+    const [memory, feedback] = await Promise.all([getMemory(ctx.from.id, 30), getFeedback(ctx.from.id, 20)]);
+
+    let message = '✏️ Замечания и память бота\n\n';
+    message += 'Здесь ты можешь написать, что бот понял неправильно — он запомнит и исправится.\n\n';
+    message += `🧠 Фактов в памяти: ${memory.length}\n`;
+    message += `📝 Замечаний: ${feedback.length}\n\n`;
+
+    if (memory.length) {
+      message += 'Что помню:\n';
+      memory.slice(0, 5).forEach((m, i) => { message += `${i + 1}. ${String(m.note).slice(0, 70)}\n`; });
+      message += '\n';
+    }
+
+    await ctx.reply(message, Markup.inlineKeyboard([
+      [Markup.button.callback('✏️ Написать замечание', 'fb_general')],
+      [Markup.button.callback('💡 Вся память', 'fb_memory')]
+    ]));
+  });
 
   bot.hears('🩺 Загрузить анализы', async (ctx) => {
     if (!ctx.session) ctx.session = {};
@@ -105,10 +128,13 @@ export function setupHandlers(bot) {
     // 1. Заполнение профиля
     if (await handleProfileText(ctx)) return;
 
-    // 2. Ввод веса
+    // 2. Замечание от пользователя
+    if (await handleFeedbackText(ctx)) return;
+
+    // 3. Ввод веса
     if (await handleWeightText(ctx)) return;
 
-    // 3. Запрос развёрнутого ответа
+    // 4. Запрос развёрнутого ответа
     if (/дай более развернутый|дай развернутый|подробнее|расскажи детальнее|развернуто|более детально|поподробнее/i.test(text)) {
       if (!ctx.session?.lastConsultation) {
         return ctx.reply('💡 Сначала задай вопрос, и я смогу дать развёрнутый ответ.');
@@ -116,15 +142,17 @@ export function setupHandlers(bot) {
       return ctx.reply(`📚 Развёрнутый ответ:\n\n${ctx.session.lastConsultation}`);
     }
 
-    // 4. Описание еды → считаем КБЖУ
+    // 5. Описание еды → считаем КБЖУ
     if (looksLikeFood(text)) {
-      const food = await extractFoodFromText(text);
+      const { getPersonalContext } = await import('../services/feedback.js');
+      const personalContext = await getPersonalContext(ctx.from.id);
+      const food = await extractFoodFromText(text, personalContext);
       if (!ctx.session) ctx.session = {};
       ctx.session.pendingMeal = food;
       return ctx.reply(formatFoodCard(food, '🍽️ Распознано'), mealKeyboard());
     }
 
-    // 5. Иначе — консультация
+    // 6. Иначе — консультация
     return setupConsultationHandler(ctx, text);
   });
 }
