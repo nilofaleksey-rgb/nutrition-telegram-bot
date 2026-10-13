@@ -1,8 +1,29 @@
+# Секреты и доступы
 .env
+.env.*
+!.env.example
+*.key
+*.pem
+id_rsa*
+*known_hosts*
+# Пакеты доступа и ключи серверов
+technomix-bots*
+*access*.zip
+*Доступ*
+_access_tmp/
+
+# Локальные файлы среды (содержат адрес сервера), в публичный репозиторий не попадают
+docs/техномикс-правила.md
+docs/техномикс-контекст.md
+
+# Зависимости и данные
 node_modules/
 data/
 *.db
 *.db-journal
 *.log
 npm-debug.log*
+
+# Служебное
 .DS_Store
+Thumbs.db
